@@ -1,0 +1,443 @@
+/********************************************************************************************
+This is a template for assignment on writing a custom Shell. 
+Students may change the return types and arguments of the functions given in this template,
+but do not change the names of these functions.
+Though use of any extra functions is not recommended, students may use new functions if they need to, 
+but that should not make code unnecessorily complex to read.
+Students should keep names of declared variable (and any new functions) self explanatory,
+and add proper comments for every logical step.
+Students need to be careful while forking a new process (no unnecessory process creations) 
+or while inserting the single handler code (should be added at the correct places).
+Finally, keep your filename as myshell.c, do not change this name (not even myshell.cpp, 
+as you not need to use any features for this assignment that are supported by C++ but not by C).
+*********************************************************************************************/
+
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>			// exit()
+#include <unistd.h>			// fork(), getpid(), exec()
+#include <sys/wait.h>		// wait()
+#include <signal.h>			// signal()
+#include <fcntl.h>			// close(), open()
+
+
+int parseInput(char * inpt, char ** ret_command[])
+{
+	// This function will parse the input string into multiple commands or a single command with arguments depending on the delimiter (&&, ##, >, or spaces);
+	int s_size = strlen(inpt),i;
+	char * temp = (char *)malloc(s_size-1);		//Last char is always new-line ('\n')
+	char * temp_for_sep = (char *)malloc(s_size-1);
+	char * temp_for_sep1 = (char *)malloc(s_size-1);
+	memcpy(temp,inpt,s_size-1);
+	memcpy(temp_for_sep,inpt,s_size-1);
+	memcpy(temp_for_sep1,inpt,s_size-1);
+	char * slice;
+	char * slice1;
+	int count = 0;
+	
+	int option = 0;
+	if (strstr(temp,"&&") != NULL)
+	{
+		i = 0;
+		ret_command[0] = (char **)malloc(sizeof(char*)*100);
+		while((slice = strsep(&temp_for_sep,"&&")) != NULL )
+		{
+			char * pt = (char *)malloc(sizeof(char*));
+			pt = slice;
+			// store the isolated commands in command_list
+			if (strlen(slice) != 0)
+			{
+			    ret_command[0][i++] = pt;
+			}
+		}
+		ret_command[0][i] = NULL;
+		option = 1;
+	}
+	else if (strstr(temp,"##") != NULL)
+	{
+		i = 0;
+		ret_command[0] = (char **)malloc(sizeof(char*)*100);
+		while((slice = strsep(&temp_for_sep,"##")) != NULL )
+		{
+			char * pt = (char *)malloc(sizeof(char*));
+			pt = slice;
+			// store the isolated commands in command_list
+			if (strlen(slice) != 0)
+			{
+			    ret_command[0][i++] = pt;
+			}
+		}
+		ret_command[0][i] = NULL;
+		option = 2;
+	}
+	else if (strstr(temp,">") != NULL)
+	{
+		i = 0;
+		ret_command[0] = (char **)malloc(sizeof(char*)*100);
+		while((slice = strsep(&temp_for_sep,">")) != NULL )
+		{
+			char * pt = (char *)malloc(sizeof(char*));
+			pt = slice;
+			// store the isolated commands in command_list
+			if (strlen(slice) != 0)
+			{
+			    ret_command[0][i++] = pt;
+			}
+		}
+		ret_command[0][i] = NULL;
+		option = 3;
+	}
+	else
+	{
+		ret_command[0] = (char **)malloc(sizeof(char*)*1);
+		ret_command[0][0] = temp;
+		count = 1;
+		i=1;
+		ret_command[0][1] = NULL;
+		option = 4;
+	}
+}
+
+
+char** get_commandArgs(char* cmd)
+{
+	// removing prefixing spaces
+	while(*cmd == ' ')					
+	{
+		cmd++;
+	}
+	char* temp = strdup(cmd);
+
+	// check for cd as it cant be executed using execvp
+	char* first_sep = strsep(&cmd, " ");
+
+	// change directory is "cd" is encountered
+	if (strcmp(first_sep,"cd")==0)
+	{
+		chdir(strsep(&cmd, "\n "));
+	}
+	else
+	{
+		// mallocing for commands and its arguments
+		char** command_args;
+		command_args = (char**)malloc(sizeof(char*)*20);
+		for(int i=0; i<20; i++)
+		{
+			command_args[i] = (char*)malloc(100*sizeof(char));
+		}
+
+		char* sep_str;
+		int i = 0;
+
+		//if there's a string with spaces, else directly assign the string to command_args[i]
+		if (strstr(temp, " ")!=NULL)
+		{	
+			// iterate over the space seperated arguments
+			while ((sep_str = strsep(&temp," ")) != NULL)					
+			{
+				// remove whitespaces before a command if there are present
+				while(*sep_str == ' ')					
+					sep_str++;
+				command_args[i] = strsep(&sep_str, " ");	
+				i++;
+			}
+			
+			// if current string is an empty string, assign NULL
+			if(strlen(command_args[i-1])==0)
+				command_args[i-1] = NULL;
+			else
+				command_args[i] = NULL;
+
+			i=0;
+			return command_args;
+		}
+		else
+		{
+			// assign the entire command in case of no spaces
+			strcpy(command_args[0], temp);
+			command_args[1] = NULL;
+			return command_args;
+		}
+		
+	}
+	return NULL;
+}
+
+// This function will fork a new process to execute a command
+void executeCommand(char** command_list)
+{
+
+	// get the command and arg list from given command
+	char** command_args = get_commandArgs(command_list[0]);
+
+	// fork process
+	int pid = fork();
+
+	//fork failure
+	if (pid < 0)
+	{
+		exit(0);
+	}
+	else if (pid==0)  	//Child        
+	{
+		// execute the command 
+		int retval = execvp(command_args[0], command_args);
+
+		 //execvp failure
+		if (retval < 0)     
+		{
+			printf("Shell: Incorrect command\n");
+			exit(1);
+		}
+	} 
+
+	// Parent Process
+	else
+	{
+		//wait for the child to finish
+		wait(NULL);
+	}
+}
+
+// This function will run a single command with output redirected to an output file specificed by user
+void executeCommandRedirection(char** list)
+{
+	// get the command and argumnet list for particular command
+	char* cmd = list[0];
+
+	// getting the string that contains filename
+	char* file_name = list[1]; 
+
+	// remove whitespaces before a filename if there are present
+	while(*file_name == ' ')			
+		file_name++;
+
+	// Close stdout
+	
+
+	// open given file, or create if not found one
+	int filefd = open(file_name, O_WRONLY|O_CREAT|O_APPEND, 0666);	
+	
+	// fork process
+	int pid = fork();
+
+	// child Process
+	if (pid < 0)
+	{
+		exit(0);
+	}
+	else if (pid ==0) 
+	{
+		close(STDOUT_FILENO);
+		dup(filefd);
+		// execute for command and its arguments
+		char** command_args = get_commandArgs(cmd);
+		int retval = execvp(command_args[0], command_args);
+
+		//execvp failure
+		if (retval < 0)      
+		{
+			printf("Shell: Incorrect command\n");
+			exit(1);
+		}
+	} 
+
+	// Parent Process
+	else
+	{
+		close(filefd);
+		int t=wait(NULL);
+	}
+}
+
+// This function will run multiple commands in parallel
+void executeParallelCommands(char** list)
+{
+	int i = 0;
+	while(list[i]!=NULL)
+	{
+		char* temp = strdup(list[i]);
+		if (get_commandArgs(temp) == NULL)
+		{
+			i++;
+			continue;
+		}
+		else if(strlen(list[i])>0)
+		{
+			// fork process
+			int pid = fork();
+			if (pid == 0)	
+			{
+				
+				//we have to enable signals again for child processes	
+				signal(SIGINT, SIG_DFL);
+				signal(SIGTSTP, SIG_DFL);	
+
+				// get the command and arg list from given command
+				char** command_args = get_commandArgs(list[i]);
+
+				int return_val = execvp(command_args[0], command_args);
+
+				//execvp error code
+				if (return_val < 0)					
+				{	 
+					printf("Shell: Incorrect command\n");
+					exit(1);
+				}
+				exit(0);
+			}
+			// Parent Process
+			else if (pid)
+			{
+				//no wait statement here as it needs to run parallely
+				//parent process
+				i++;			
+				if(list[i+1]!=NULL)
+					wait(NULL);
+				else
+					continue;	
+			}
+			// if fork fails, then exit
+			else
+			{ 
+				exit(1);	
+			}
+		}
+		else
+		{
+			i++;
+		}
+					
+	}
+}
+
+// This function will run multiple commands in parallel
+void executeSequentialCommands(char** list)
+{	
+
+	int i = 0;
+	while(list[i]!=NULL)
+	{	
+		// get the command and arg list from given command
+		char* temp = strdup(list[i]);
+
+		// special case for "cd"
+		if(strstr(temp,"cd")!=NULL)
+		{
+			get_commandArgs(list[i]);
+			i++;
+		}
+		// case where there's empty string
+		else if(strlen(list[i])>0)
+		{
+
+			int pid = fork(); //making child process
+
+			// child process
+			if (pid == 0)		
+			{
+				//we have to enable signals again for child processes
+				signal(SIGINT, SIG_DFL);
+				signal(SIGTSTP, SIG_DFL);		
+
+				// parsing each command
+				char** command_args = get_commandArgs(list[i]); 
+				int return_val = execvp(command_args[0], command_args);
+			
+				//execvp error code
+				if (return_val < 0)					
+				{	 
+					printf("Shell: Incorrect command\n");
+					exit(1);
+				}	
+	
+			}
+
+			// Parent Process
+			else if (pid)
+			{
+				// we have to enable signals again for child processes
+				wait(NULL);
+				i++;
+			}	
+			else
+			{ 
+				exit(1);
+			}
+		}
+		else
+		{
+			i++;
+		}
+		
+	}
+}
+
+// Signal Handler for SIGINT (CTRL + C)
+void sigintHandler(int sig_num)
+{
+    /* Reset handler to catch SIGINT next time. */
+    signal(SIGINT, sigintHandler);
+    printf("\n Cannot be terminated using Ctrl+C, enter 'exit' \n");
+}
+
+// Signal Handler for SIGTSTP (CTRL + Z)
+void sighandler(int sig_num)
+{
+    // Reset handler to catch SIGTSTP next time
+    signal(SIGTSTP, sighandler);
+    printf("\n Cannot be terminated using Ctrl+Z, enter 'exit'\n");      
+}
+
+int main()
+{
+	// Initial declarations
+	char* str=NULL;
+	size_t str_len = 64;
+
+	signal(SIGINT, sigintHandler);
+	signal(SIGTSTP, sighandler);
+	
+	// This loop will keep your shell running until user exits.
+	while(1)	
+	{
+		char curr_dir[64];
+
+		// Print the prompt in format - currentWorkingDirectory$
+		getcwd(curr_dir, 64);
+		
+		printf("%s$",curr_dir);          
+
+		// accept input with 'getline()'
+		getline(&str,&str_len,stdin);   
+
+		// allocate memory for the list of strings to strore isolated
+		// commands, seperated by delimiters
+		char** command_list;
+		command_list = (char**)malloc(sizeof(char*)*10);
+		for(int i=0; i<10; i++)
+			command_list[i] = (char*)malloc(50*sizeof(char));
+
+		// When user uses exit command		
+		if(strcmp(str, "exit\n")==0)
+		{
+			printf("Exiting shell...\n");
+			break;
+		}
+
+		// Parse input with 'strsep()' for different symbols (&&, ##, >) and for spaces.
+		int ret = parseInput(str, &command_list); 
+	
+		if(ret==1)
+			executeParallelCommands(command_list);		// This function is invoked when user wants to run multiple commands in parallel (commands separated by &&)
+		else if(ret==2)
+			executeSequentialCommands(command_list);	// This function is invoked when user wants to run multiple commands sequentially (commands separated by ##)
+		else if(ret==3)
+			executeCommandRedirection(command_list);	// This function is invoked when user wants redirect output of a single command to and output file specificed by user
+		else
+			executeCommand(command_list);		// This function is invoked when user wants to run a single commands
+				
+	}
+	
+	return 0;
+}
